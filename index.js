@@ -1,74 +1,57 @@
 const puppeteer = require('puppeteer');
-const fs = require('fs');
 
 (async () => {
   // Launch the browser
   const browser = await puppeteer.launch();
   const page = await browser.newPage();
 
-  // Set the cookie (replace values with your cookie's details)
-  const cookie = {
-    name: 'your_cookie_name', // Cookie name
-    value: 'your_cookie_value', // Cookie value
-    domain: 'example.com', // Domain for the cookie (ensure it matches the site)
-    path: '/', // Path for the cookie
-    httpOnly: false, // Set to true if the cookie is HttpOnly
-    secure: false, // Set to true if the cookie is Secure
-    expires: -1 // Set to -1 for session cookie
-  };
-
-  await page.setCookie(cookie);
+  // Set viewport to the desired width and height
+  await page.setViewport({ width: 1200, height: 720 });
 
   // Navigate to the desired URL
-  await page.goto('https://example.com', { waitUntil: 'networkidle2' }); // Replace with your URL
+  await page.goto('https://www.careinsurance.com', { waitUntil: ['networkidle0','domcontentloaded'] });
 
-  // Capture full page height and set viewport width
+  // Wait for a specific selector to ensure the page is fully loaded
+  await page.waitForSelector('body');
+
+  // Create an array to store screenshot paths
+  const screenshotPaths = [];
+
+  // Get the total scrollable height
   const bodyHandle = await page.$('body');
   const { height } = await bodyHandle.boundingBox();
-  const viewportWidth = 1200; // Width for the screenshot
+  await bodyHandle.dispose();
 
-  // Set viewport size to accommodate the full content
-  await page.setViewport({ width: viewportWidth, height: height });
+  // Scroll through the page and take screenshots
+  for (let scrollY = 0; scrollY < height; scrollY += 720) {
+    await page.evaluate(scrollY => {
+      window.scrollTo(0, scrollY);
+    }, scrollY);
 
-  // Take a full-page screenshot
-  const screenshotPath = 'full_content_screenshot.png';
-  await page.screenshot({ path: screenshotPath, fullPage: true });
+    // Wait for the scroll to settle
+    //await page.waitForTimeout(500); // Adjust timeout as necessary
 
-  // Create PDF with the screenshot
+    // Take a screenshot and save it
+    const screenshotPath = `screenshot-${scrollY}.png`;
+    await page.screenshot({ path: screenshotPath });
+    screenshotPaths.push(screenshotPath);
+  }
+
+  // Create a PDF with the screenshots
   const pdfPath = 'output.pdf';
-  const screenshotBuffer = fs.readFileSync(screenshotPath);
-  const base64Image = screenshotBuffer.toString('base64');
-
-  // Create HTML content for the PDF
-  const pdfContent = `
-    <html>
-      <body style="margin: 0; display: flex; justify-content: center;">
-        <img src="data:image/png;base64,${base64Image}" style="width: 100%; max-width: 100%;">
-      </body>
-    </html>
-  `;
-
-  // Create a new page for the PDF content
-  const pdfPage = await browser.newPage();
-  await pdfPage.setContent(pdfContent, { waitUntil: 'networkidle0' });
-
-  // Generate the PDF
-  await pdfPage.pdf({
+  await page.pdf({
     path: pdfPath,
     format: 'A4',
     printBackground: true,
     margin: {
-      top: '0px',
-      bottom: '0px',
-      left: '0px',
-      right: '0px'
+      
     }
   });
 
-  // Cleanup
-  await pdfPage.close();
-  await browser.close();
+  // Optionally, cleanup the screenshots after PDF creation
+  const fs = require('fs');
+  screenshotPaths.forEach(path => fs.unlinkSync(path));
 
-  // Optionally, remove the screenshot file
-  fs.unlinkSync(screenshotPath);
+  // Cleanup
+  await browser.close();
 })();
